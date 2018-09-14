@@ -163,9 +163,11 @@ public class RealSubscriptionManager implements SubscriptionManager {
         subscriptionObject.scalarTypeAdapters = this.scalarTypeAdapters;
 
 
-        for (String topic : subbedTopics) {
-            subscriptionObject.topics.add(topic);
-            addSubscriptionObject(topic, subscriptionObject);
+        synchronized (subscriptionsByTopic_addLock) {
+            for (String topic : subbedTopics) {
+                subscriptionObject.topics.add(topic);
+                addSubscriptionObject(topic, subscriptionObject);
+            }
         }
 
         final CountDownLatch clientConnected = new CountDownLatch(response.mqttInfos.size());
