@@ -57,6 +57,7 @@ public class RealSubscriptionManager implements SubscriptionManager {
 
     private final Object subscriptionsById_addLock = new Object();
     private final Object subscriptionsByTopic_addLock = new Object();
+    private final Object subscriptionsByTopic_getLock = new Object();
 
     public RealSubscriptionManager(@Nonnull final Context applicationContext) {
         this.applicationContext = applicationContext.getApplicationContext();
@@ -118,11 +119,13 @@ public class RealSubscriptionManager implements SubscriptionManager {
      */
     private void addSubscriptionObject(String topic, SubscriptionObject subscriptionObject) {
         synchronized (subscriptionsByTopic_addLock) {
-            Set<SubscriptionObject> subscriptionObjects = getSubscriptionObjects(topic);
-            HashSet<SubscriptionObject> set = new HashSet<>(subscriptionObjects);
-            set.add(subscriptionObject);
-            Log.d(TAG, "Adding subscription watcher " + subscriptionObject + " to topic " + topic + " total topics: " + set.size());
-            subscriptionsByTopic.get(topic).set(set);
+            synchronized (subscriptionsByTopic_getLock) {
+                Set<SubscriptionObject> subscriptionObjects = getSubscriptionObjects(topic);
+                HashSet<SubscriptionObject> set = new HashSet<>(subscriptionObjects);
+                set.add(subscriptionObject);
+                Log.d(TAG, "Adding subscription watcher " + subscriptionObject + " to topic " + topic + " total topics: " + set.size());
+                subscriptionsByTopic.get(topic).set(set);
+            }
         }
     }
 
@@ -159,6 +162,7 @@ public class RealSubscriptionManager implements SubscriptionManager {
         subscriptionObject.normalizer = mapResponseNormalizer;
         subscriptionObject.scalarTypeAdapters = this.scalarTypeAdapters;
 
+
         for (String topic : subbedTopics) {
             subscriptionObject.topics.add(topic);
             addSubscriptionObject(topic, subscriptionObject);
@@ -190,16 +194,16 @@ public class RealSubscriptionManager implements SubscriptionManager {
                 public void onError(Exception e) {
                     Map<SubscriptionObject, AppSyncSubscriptionCall.Callback> unsubscribeMap = new HashMap<>();
                     for (String topic : info.topics) {
-                        Set<SubscriptionObject> subscriptionObjects =
-                                new HashSet<>(getSubscriptionObjects(topic));
-                        for (SubscriptionObject subObj : subscriptionObjects) {
-                            if (e instanceof SubscriptionDisconnectedException) {
-                                subObj.onFailure(new ApolloException("Subscription terminated", e));
-                                for (Object c : subObj.getListeners()) {
-                                    unsubscribeMap.put(subObj, ((AppSyncSubscriptionCall.Callback)c));
+                        synchronized (subscriptionsByTopic_getLock) {
+                            for (SubscriptionObject subObj : getSubscriptionObjects(topic)) {
+                                if (e instanceof SubscriptionDisconnectedException) {
+                                    subObj.onFailure(new ApolloException("Subscription terminated", e));
+                                    for (Object c : subObj.getListeners()) {
+                                        unsubscribeMap.put(subObj, ((AppSyncSubscriptionCall.Callback) c));
+                                    }
+                                } else {
+                                    subObj.onFailure(new ApolloException("Failed to create client for subscription", e));
                                 }
-                            } else {
-                                subObj.onFailure(new ApolloException("Failed to create client for subscription", e));
                             }
                         }
                     }
